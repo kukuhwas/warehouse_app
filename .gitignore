@@ -1,0 +1,14 @@
+# Virtual Environment
+myenv/
+venv/
+
+# File Konfigurasi Lokal
+data/config.ini
+rancangan_db.txt
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
