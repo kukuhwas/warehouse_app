@@ -12,3 +12,7 @@ rancangan_db.txt
 # Python
 __pycache__/
 *.pyc
+
+# Ignore IDE-specific files
+.vscode
+.pytest_cache
