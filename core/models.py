@@ -1,26 +1,25 @@
-from datetime import datetime
-
 class Kategori:
     def __init__(self, id_kategori, nama_kategori):
         self.id_kategori = id_kategori
         self.nama_kategori = nama_kategori
 
 class Barang:
-    def __init__(self, id_barang, kode_barang, nama_barang, deskripsi, kategori_id, satuan):
+    def __init__(self, id_barang, kode_barang, nama_barang, deskripsi_barang, kategori_id, satuan):
         self.id_barang = id_barang
         self.kode_barang = kode_barang
         self.nama_barang = nama_barang
-        self.deskripsi = deskripsi
+        self.deskripsi_barang = deskripsi_barang
         self.kategori_id = kategori_id
         self.satuan = satuan
 
 class Varian:
-    def __init__(self, id_varian, barang_id, nama_varian, nilai_varian, sku):
+    def __init__(self, id_varian, barang_id, nama_varian, nilai_varian, sku, barang_kode):
         self.id_varian = id_varian
         self.barang_id = barang_id
         self.nama_varian = nama_varian
         self.nilai_varian = nilai_varian
         self.sku = sku # Pastikan untuk menambahkan atribut sku
+        self.barang_kode = barang_kode
 
 class Supplier:
     def __init__(self, id_supplier, nama_supplier, kontak, alamat):
@@ -49,14 +48,22 @@ class Pelanggan:
         self.alamat = alamat
 
 class Pembelian:
-    def __init__(self, id_pembelian, supplier_id, tanggal_pembelian, keterangan):
+    def __init__(self, id_pembelian, tanggal_pembelian, supplier_id, keterangan):
         self.id_pembelian = id_pembelian
-        self.supplier_id = supplier_id
         self.tanggal_pembelian = tanggal_pembelian
+        self.supplier_id = supplier_id
         self.keterangan = keterangan
 
+class DetailPembelian:
+    def __init__(self, id_detail_pembelian, pembelian_id, varian_id, jumlah, harga):
+        self.id_detail_pembelian = id_detail_pembelian
+        self.pembelian_id = pembelian_id
+        self.varian_id = varian_id
+        self.jumlah = jumlah
+        self.harga = harga
+
 class Penjualan:
-    def __init__(self, id_penjualan, pelanggan_id, tanggal_penjualan, keterangan):
+    def __init__(self, id_penjualan, tanggal_penjualan, pelanggan_id, keterangan):
         self.id_penjualan = id_penjualan
         self.tanggal_penjualan = tanggal_penjualan
         self.pelanggan_id = pelanggan_id

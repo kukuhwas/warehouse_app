@@ -1,7 +1,18 @@
 import psycopg2
 import configparser
 import uuid
-from core.models import Kategori, Barang, Varian, Supplier, Gudang, Rak, Pelanggan, Pembelian, Penjualan
+from core.models import (
+    Kategori, 
+    Barang, 
+    Varian, 
+    Supplier, 
+    Gudang, 
+    Rak, 
+    Pelanggan, 
+    Pembelian, 
+    DetailPembelian, 
+    Penjualan,
+)
 from datetime import datetime
 
 
@@ -56,14 +67,20 @@ def create_kategori(conn, kategori):
             return None
 
         # Cek apakah kategori dengan ID tersebut sudah ada
-        cursor.execute("SELECT COUNT(*) FROM kategori WHERE id_kategori = %s", (kategori.id_kategori,))
+        cursor.execute("SELECT COUNT(*) FROM kategori WHERE id_kategori = %s", 
+                       (
+                           kategori.id_kategori,
+                        ))
         count = cursor.fetchone()[0]
         if count > 0:
             print(f"Error: Kategori dengan ID {kategori.id_kategori} sudah ada.")
             return None
 
         # Jika belum mencapai batas maksimal, tambahkan kategori baru
-        cursor.execute("INSERT INTO kategori (id_kategori, nama_kategori) VALUES (%s, %s)", (kategori.id_kategori, kategori.nama_kategori))
+        cursor.execute("INSERT INTO kategori (id_kategori, nama_kategori) VALUES (%s, %s)", 
+                       (kategori.id_kategori, 
+                        kategori.nama_kategori,
+                        ))
         conn.commit()
         print("Data kategori berhasil ditambahkan.")
         return kategori.id_kategori
@@ -95,7 +112,10 @@ def get_kategori(conn, id_kategori):
     """Mengambil data kategori berdasarkan id_kategori."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM kategori WHERE id_kategori = %s", (id_kategori,))
+        cursor.execute("SELECT * FROM kategori WHERE id_kategori = %s", 
+                       (
+                           id_kategori,
+                        ))
         row = cursor.fetchone()
         if row:
             kategori = Kategori(row[0], row[1])
@@ -113,7 +133,11 @@ def update_kategori(conn, kategori):
     """Memperbarui data kategori di database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE kategori SET nama_kategori = %s WHERE id_kategori = %s", (kategori.nama_kategori, kategori.id_kategori))
+        cursor.execute("UPDATE kategori SET nama_kategori = %s WHERE id_kategori = %s", 
+                       (
+                           kategori.nama_kategori, 
+                           kategori.id_kategori,
+                        ))
         conn.commit()
         print("Data kategori berhasil diperbarui.")
     except psycopg2.Error as e:
@@ -126,7 +150,10 @@ def delete_kategori(conn, id_kategori):
     """Menghapus data kategori dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM kategori WHERE id_kategori = %s", (id_kategori,))
+        cursor.execute("DELETE FROM kategori WHERE id_kategori = %s", 
+                       (
+                           id_kategori,
+                        ))
         conn.commit()
         print("Data kategori berhasil dihapus.")
     except psycopg2.Error as e:
@@ -173,7 +200,13 @@ def create_barang(conn, barang):
 
         # Query untuk insert data barang
         cursor.execute("INSERT INTO barang (kode_barang, nama_barang, deskripsi, kategori_id, satuan) VALUES (%s, %s, %s, %s, %s)",
-                       (barang.kode_barang, barang.nama_barang, barang.deskripsi, barang.kategori_id, barang.satuan))
+                       (
+                           barang.kode_barang, 
+                           barang.nama_barang, 
+                           barang.deskripsi_barang, 
+                           barang.kategori_id, 
+                           barang.satuan,
+                        ))
         conn.commit()
         print("Data barang berhasil ditambahkan.")
 
@@ -181,7 +214,11 @@ def create_barang(conn, barang):
         cursor.execute("SELECT currval(pg_get_serial_sequence('barang','id_barang'))")
         barang_id = cursor.fetchone()[0]
 
-        return barang_id
+        # Mendapatkan kode barang yang baru saja di-insert
+        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", (barang_id,))
+        barang_kode = cursor.fetchone()[0]
+
+        return barang_id, barang_kode
     except psycopg2.Error as e:
         print(f"Error menambahkan barang: {e}")
         conn.rollback()
@@ -210,7 +247,10 @@ def get_barang(conn, id_barang):
     """Mengambil data barang berdasarkan id_barang."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM barang WHERE id_barang = %s", (id_barang,))
+        cursor.execute("SELECT * FROM barang WHERE id_barang = %s", 
+                       (
+                           id_barang,
+                        ))
         row = cursor.fetchone()
         if row:
             barang = Barang(row[0], row[1], row[2], row[3], row[4], row[5])
@@ -228,26 +268,67 @@ def update_barang(conn, barang):
     """Memperbarui data barang di database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("UPDATE barang SET kode_barang = %s, nama_barang = %s, deskripsi = %s, kategori_id = %s, satuan = %s WHERE id_barang = %s",
-                       (barang.kode_barang, barang.nama_barang, barang.deskripsi, barang.kategori_id, barang.satuan, barang.id_barang))
+        # Ambil nama_barang lama dan kode_barang lama dari database
+        cursor.execute("SELECT nama_barang, kode_barang FROM barang WHERE id_barang = %s", (barang.id_barang,))
+        result = cursor.fetchone()
+        if result is None:
+            print(f"Error: Barang dengan ID {barang.id_barang} tidak ditemukan.")
+            return False
+        old_nama_barang, old_kode_barang = result
+
+        # Jika nama_barang diubah, generate kode_barang yang baru
+        if old_nama_barang != barang.nama_barang:
+            barang.kode_barang = generate_kode_barang(conn, barang.kategori_id)
+        else:
+            barang.kode_barang = old_kode_barang
+
+        cursor.execute(
+            "UPDATE barang SET kode_barang = %s, nama_barang = %s, deskripsi = %s, kategori_id = %s, satuan = %s WHERE id_barang = %s",
+            (
+                barang.kode_barang, 
+                barang.nama_barang, 
+                barang.deskripsi_barang, 
+                barang.kategori_id, 
+                barang.satuan, 
+                barang.id_barang,
+            ))
         conn.commit()
         print("Data barang berhasil diperbarui.")
+        return True
     except psycopg2.Error as e:
         print(f"Error memperbarui barang: {e}")
         conn.rollback()
+        return False
     finally:
         cursor.close()
 
 def delete_barang(conn, id_barang):
-    """Menghapus data barang dari database."""
+    """Menghapus data barang dari database beserta variannya."""
     cursor = conn.cursor()
     try:
+        cursor.execute("BEGIN")  # Memulai transaksi
+
+        # Cek apakah barang dengan ID tersebut ada
+        cursor.execute("SELECT COUNT(*) FROM barang WHERE id_barang = %s", (id_barang,))
+        count = cursor.fetchone()[0]
+        if count == 0:
+            print(f"Barang dengan ID {id_barang} tidak ditemukan.")
+            conn.rollback()  # Rollback transaksi jika barang tidak ditemukan
+            return False
+
+        # Hapus varian yang terkait dengan barang
+        cursor.execute("DELETE FROM varian WHERE barang_id = %s", (id_barang,))
+
+        # Hapus barang
         cursor.execute("DELETE FROM barang WHERE id_barang = %s", (id_barang,))
-        conn.commit()
-        print("Data barang berhasil dihapus.")
+
+        conn.commit()  # Commit transaksi
+        print("Data barang dan varian berhasil dihapus.")
+        return True
     except psycopg2.Error as e:
-        print(f"Error menghapus barang: {e}")
-        conn.rollback()
+        print(f"Error menghapus barang dan varian: {e}")
+        conn.rollback()  # Rollback transaksi jika terjadi error
+        return False
     finally:
         cursor.close()
 
@@ -255,7 +336,10 @@ def generate_sku(conn, barang_id, nama_varian, nilai_varian):
     cursor = conn.cursor()
     try:
         # 1. Ambil kode barang (2 karakter)
-        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", (barang_id,))
+        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", 
+                       (
+                           barang_id,
+                        ))
         row = cursor.fetchone()
         if row is None:
             print(f"Error: Barang dengan ID {barang_id} tidak ditemukan.")
@@ -295,11 +379,24 @@ def create_varian(conn, varian):
         if sku is None:
             print("Error: Gagal membuat SKU.")
             return None
-
         varian.sku = sku # Set nilai sku ke objek varian
 
-        cursor.execute("INSERT INTO varian (barang_id, nama_varian, nilai_varian, sku) VALUES (%s, %s, %s, %s)",
-                       (varian.barang_id, varian.nama_varian, varian.nilai_varian, varian.sku))
+        # Ambil barang_kode berdasarkan barang_id
+        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", (varian.barang_id,))
+        result = cursor.fetchone()
+        if result is None:
+            print(f"Error: Kode Barang dengan ID {varian.barang_id} tidak ditemukan.")
+            return None
+        varian.barang_kode = result[0]  # Set nilai barang_kode ke objek varian
+
+        cursor.execute("INSERT INTO varian (barang_id, nama_varian, nilai_varian, sku) VALUES (%s, %s, %s, %s, %s)",
+                       (
+                           varian.barang_id, 
+                           varian.nama_varian, 
+                           varian.nilai_varian, 
+                           varian.sku,
+                           varian.barang_kode,
+                        ))
         conn.commit()
         print("Data varian berhasil ditambahkan.")
         # Mendapatkan ID varian yang baru saja di-insert
@@ -334,7 +431,10 @@ def get_varian_by_barang_id(conn, barang_id):
     """Mengambil data varian berdasarkan barang_id."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM varian WHERE barang_id = %s", (barang_id,))
+        cursor.execute("SELECT * FROM varian WHERE barang_id = %s", 
+                       (
+                           barang_id,
+                        ))
         rows = cursor.fetchall()
         varian_list = []
         for row in rows:
@@ -351,7 +451,11 @@ def get_varian_by_nilai_varian(conn, barang_id, nilai_varian):
     """Mengambil data varian berdasarkan barang_id dan nilai_varian."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM varian WHERE barang_id = %s AND nilai_varian = %s", (barang_id, nilai_varian))
+        cursor.execute("SELECT * FROM varian WHERE barang_id = %s AND nilai_varian = %s", 
+                       (
+                           barang_id, 
+                           nilai_varian,
+                        ))
         row = cursor.fetchone()
         if row:
             return Varian(row[0], row[1], row[2], row[3], row[4])
@@ -380,7 +484,13 @@ def update_varian(conn, varian):
         varian.sku = sku
 
         cursor.execute("UPDATE varian SET barang_id = %s, nama_varian = %s, nilai_varian = %s, sku = %s WHERE id_varian = %s",
-                       (varian.barang_id, varian.nama_varian, varian.nilai_varian, varian.sku, varian.id_varian))
+                       (
+                           varian.barang_id, 
+                           varian.nama_varian, 
+                           varian.nilai_varian, 
+                           varian.sku, 
+                           varian.id_varian,
+                           ))
         conn.commit()
         print("Data varian berhasil diperbarui.")
         return True
@@ -403,7 +513,10 @@ def delete_varian(conn, id_varian):
     """
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM varian WHERE id_varian = %s", (id_varian,))
+        cursor.execute("DELETE FROM varian WHERE id_varian = %s", 
+                       (
+                           id_varian,
+                        ))
         conn.commit()
         print("Data varian berhasil dihapus.")
         return True
@@ -418,7 +531,10 @@ def get_varian(conn, id_varian):
     """Mengambil data varian berdasarkan id_varian."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM varian WHERE id_varian = %s", (id_varian,))
+        cursor.execute("SELECT * FROM varian WHERE id_varian = %s", 
+            (
+               id_varian,
+            ))
         row = cursor.fetchone()
         if row:
             return Varian(row[0], row[1], row[2], row[3], row[4])
@@ -435,7 +551,11 @@ def create_supplier(conn, supplier):
     try:
         cursor.execute(
             "INSERT INTO supplier (nama_supplier, kontak, alamat) VALUES (%s, %s, %s) RETURNING id_supplier",
-            (supplier.nama_supplier, supplier.kontak, supplier.alamat)
+            (
+                supplier.nama_supplier, 
+                supplier.kontak, 
+                supplier.alamat,
+            )
         )
         supplier_id = cursor.fetchone()[0]
         conn.commit()
@@ -468,7 +588,10 @@ def get_supplier(conn, id_supplier):
     """Mengambil data supplier berdasarkan id_supplier."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM supplier WHERE id_supplier = %s", (id_supplier,))
+        cursor.execute("SELECT * FROM supplier WHERE id_supplier = %s", 
+                       (
+                           id_supplier,
+                        ))
         row = cursor.fetchone()
         if row:
             return Supplier(row[0], row[1], row[2], row[3])
@@ -485,7 +608,12 @@ def update_supplier(conn, supplier):
     try:
         cursor.execute(
             "UPDATE supplier SET nama_supplier = %s, alamat = %s, kontak = %s WHERE id_supplier = %s",
-            (supplier.nama_supplier, supplier.alamat, supplier.kontak, supplier.id_supplier)
+                        (
+                            supplier.nama_supplier, 
+                            supplier.alamat, 
+                            supplier.kontak, 
+                            supplier.id_supplier,
+                        )
         )
         conn.commit()
         return True
@@ -500,7 +628,10 @@ def delete_supplier(conn, id_supplier):
     """Menghapus data supplier dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM supplier WHERE id_supplier = %s", (id_supplier,))
+        cursor.execute("DELETE FROM supplier WHERE id_supplier = %s", 
+                       (
+                           id_supplier,
+                        ))
         conn.commit()
         return True
     except psycopg2.Error as e:
@@ -516,7 +647,10 @@ def create_gudang(conn, gudang):
     try:
         cursor.execute(
             "INSERT INTO gudang (nama_gudang, alamat_gudang) VALUES (%s, %s) RETURNING id_gudang",
-            (gudang.nama_gudang, gudang.alamat_gudang)
+                (
+                    gudang.nama_gudang, 
+                    gudang.alamat_gudang,
+                )
         )
         gudang_id = cursor.fetchone()[0]
         conn.commit()
@@ -549,7 +683,10 @@ def get_gudang(conn, id_gudang):
     """Mengambil data gudang berdasarkan id_gudang."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM gudang WHERE id_gudang = %s", (id_gudang,))
+        cursor.execute("SELECT * FROM gudang WHERE id_gudang = %s", 
+                       (
+                           id_gudang,
+                        ))
         row = cursor.fetchone()
         if row:
             gudang = Gudang(row[0], row[1], row[2])
@@ -569,7 +706,11 @@ def update_gudang(conn, gudang):
     try:
         cursor.execute(
             "UPDATE gudang SET nama_gudang = %s, alamat_gudang = %s WHERE id_gudang = %s",
-            (gudang.nama_gudang, gudang.alamat_gudang, gudang.id_gudang)
+                (
+                    gudang.nama_gudang, 
+                    gudang.alamat_gudang, 
+                    gudang.id_gudang,
+                )
         )
         conn.commit()
         print("Data gudang berhasil diperbarui.")
@@ -583,7 +724,10 @@ def delete_gudang(conn, id_gudang):
     """Menghapus data gudang dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM gudang WHERE id_gudang = %s", (id_gudang,))
+        cursor.execute("DELETE FROM gudang WHERE id_gudang = %s", 
+                       (
+                           id_gudang,
+                        ))
         conn.commit()
         print("Data gudang berhasil dihapus.")
     except psycopg2.Error as e:
@@ -599,7 +743,10 @@ def create_rak(conn, rak):
     try:
         cursor.execute(
             "INSERT INTO rak (gudang_id, kode_rak) VALUES (%s, %s) RETURNING id_rak",
-            (rak.gudang_id, rak.kode_rak)
+            (
+                rak.gudang_id, 
+                rak.kode_rak,
+            )
         )
         rak_id = cursor.fetchone()[0]
         conn.commit()
@@ -632,7 +779,10 @@ def get_rak(conn, id_rak):
     """Mengambil data rak berdasarkan id_rak."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM rak WHERE id_rak = %s", (id_rak,))
+        cursor.execute("SELECT * FROM rak WHERE id_rak = %s", 
+                       (
+                           id_rak,
+                        ))
         row = cursor.fetchone()
         if row:
             rak = Rak(row[0], row[1], row[2])
@@ -652,7 +802,11 @@ def update_rak(conn, rak):
     try:
         cursor.execute(
             "UPDATE rak SET kode_rak = %s, gudang_id = %s WHERE id_rak = %s",
-            (rak.kode_rak, rak.gudang_id, rak.id_rak)
+            (
+                rak.kode_rak, 
+                rak.gudang_id, 
+                rak.id_rak,
+            )
         )
         conn.commit()
         print("Data rak berhasil diperbarui.")
@@ -666,7 +820,10 @@ def delete_rak(conn, id_rak):
     """Menghapus data rak dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM rak WHERE id_rak = %s", (id_rak,))
+        cursor.execute("DELETE FROM rak WHERE id_rak = %s", 
+                       (
+                           id_rak,
+                        ))
         conn.commit()
         print("Data rak berhasil dihapus.")
     except psycopg2.Error as e:
@@ -681,7 +838,11 @@ def create_pelanggan(conn, pelanggan):
     try:
         cursor.execute(
             "INSERT INTO pelanggan (nama_pelanggan, kontak, alamat) VALUES (%s, %s, %s) RETURNING id_pelanggan",
-            (pelanggan.nama_pelanggan, pelanggan.kontak, pelanggan.alamat)
+                (
+                    pelanggan.nama_pelanggan, 
+                    pelanggan.kontak, 
+                    pelanggan.alamat,
+                )
         )
         pelanggan_id = cursor.fetchone()[0]
         conn.commit()
@@ -714,7 +875,10 @@ def get_pelanggan(conn, id_pelanggan):
     """Mengambil data pelanggan berdasarkan id_pelanggan."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM pelanggan WHERE id_pelanggan = %s", (id_pelanggan,))
+        cursor.execute("SELECT * FROM pelanggan WHERE id_pelanggan = %s", 
+                       (
+                           id_pelanggan,
+                        ))
         row = cursor.fetchone()
         if row:
             pelanggan = Pelanggan(row[0], row[1], row[2], row[3])
@@ -734,7 +898,12 @@ def update_pelanggan(conn, pelanggan):
     try:
         cursor.execute(
             "UPDATE pelanggan SET nama_pelanggan = %s, kontak = %s, alamat = %s WHERE id_pelanggan = %s",
-            (pelanggan.nama_pelanggan, pelanggan.kontak, pelanggan.alamat, pelanggan.id_pelanggan)
+                (
+                    pelanggan.nama_pelanggan, 
+                    pelanggan.kontak, 
+                    pelanggan.alamat, 
+                    pelanggan.id_pelanggan,
+                    )
         )
         conn.commit()
         print("Data pelanggan berhasil diperbarui.")
@@ -748,7 +917,10 @@ def delete_pelanggan(conn, id_pelanggan):
     """Menghapus data pelanggan dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM pelanggan WHERE id_pelanggan = %s", (id_pelanggan,))
+        cursor.execute("DELETE FROM pelanggan WHERE id_pelanggan = %s", 
+                       (
+                           id_pelanggan,
+                        ))
         conn.commit()
         print("Data pelanggan berhasil dihapus.")
     except psycopg2.Error as e:
@@ -763,10 +935,15 @@ def create_pembelian(conn, pembelian):
     try:
         cursor.execute(
             "INSERT INTO pembelian (tanggal_pembelian, supplier_id, keterangan) VALUES (%s, %s, %s) RETURNING id_pembelian",
-            (pembelian.tanggal_pembelian, pembelian.supplier_id, pembelian.keterangan)
+            (
+                pembelian.tanggal_pembelian, 
+                pembelian.supplier_id, 
+                pembelian.keterangan
+            ),
         )
-        pembelian_id = cursor.fetchone()[0]
         conn.commit()
+        pembelian_id = cursor.fetchone()[0]
+        print("Data pembelian berhasil ditambahkan.")
         return pembelian_id
     except psycopg2.Error as e:
         print(f"Error menambahkan pembelian: {e}")
@@ -796,7 +973,10 @@ def get_pembelian(conn, id_pembelian):
     """Mengambil data pembelian berdasarkan id_pembelian."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM pembelian WHERE id_pembelian = %s", (id_pembelian,))
+        cursor.execute("SELECT * FROM pembelian WHERE id_pembelian = %s", 
+                       (
+                           id_pembelian,
+                        ))
         row = cursor.fetchone()
         if row:
             pembelian = Pembelian(row[0], row[1], row[2], row[3])
@@ -816,7 +996,12 @@ def update_pembelian(conn, pembelian):
     try:
         cursor.execute(
             "UPDATE pembelian SET tanggal_pembelian = %s, supplier_id = %s, keterangan = %s WHERE id_pembelian = %s",
-            (pembelian.tanggal_pembelian, pembelian.supplier_id, pembelian.keterangan, pembelian.id_pembelian)
+                (
+                    pembelian.tanggal_pembelian, 
+                    pembelian.supplier_id, 
+                    pembelian.keterangan, 
+                    pembelian.id_pembelian,
+                    )
         )
         conn.commit()
         print("Data pembelian berhasil diperbarui.")
@@ -830,7 +1015,10 @@ def delete_pembelian(conn, id_pembelian):
     """Menghapus data pembelian dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM pembelian WHERE id_pembelian = %s", (id_pembelian,))
+        cursor.execute("DELETE FROM pembelian WHERE id_pembelian = %s", 
+                       (
+                           id_pembelian,
+                        ))
         conn.commit()
         print("Data pembelian berhasil dihapus.")
     except psycopg2.Error as e:
@@ -845,10 +1033,15 @@ def create_penjualan(conn, penjualan):
     try:
         cursor.execute(
             "INSERT INTO penjualan (pelanggan_id, tanggal_penjualan, keterangan) VALUES (%s, %s, %s) RETURNING id_penjualan",
-            (penjualan.tanggal_penjualan, penjualan.pelanggan_id, penjualan.keterangan)
+                (
+                    penjualan.tanggal_penjualan, 
+                    penjualan.pelanggan_id, 
+                    penjualan.keterangan,
+                ),
         )
-        penjualan_id = cursor.fetchone()[0]
         conn.commit()
+        penjualan_id = cursor.fetchone()[0]
+        print("Data penjualan berhasil ditambahkan.")
         return penjualan_id
     except psycopg2.Error as e:
         print(f"Error menambahkan penjualan: {e}")
@@ -878,7 +1071,10 @@ def get_penjualan(conn, id_penjualan):
     """Mengambil data penjualan berdasarkan id_penjualan."""
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT * FROM penjualan WHERE id_penjualan = %s", (id_penjualan,))
+        cursor.execute("SELECT * FROM penjualan WHERE id_penjualan = %s", 
+                       (
+                           id_penjualan,
+                        ))
         row = cursor.fetchone()
         if row:
             penjualan = Penjualan(row[0], row[1], row[2], row[3])
@@ -898,7 +1094,12 @@ def update_penjualan(conn, penjualan):
     try:
         cursor.execute(
             "UPDATE penjualan SET tanggal_penjualan = %s, pelanggan_id = %s, keterangan = %s WHERE id_penjualan = %s",
-            (penjualan.tanggal_penjualan, penjualan.pelanggan_id, penjualan.keterangan, penjualan.id_penjualan)
+                (
+                    penjualan.tanggal_penjualan, 
+                    penjualan.pelanggan_id, 
+                    penjualan.keterangan, 
+                    penjualan.id_penjualan,
+                    )
         )
         conn.commit()
         print("Data penjualan berhasil diperbarui.")
@@ -912,11 +1113,130 @@ def delete_penjualan(conn, id_penjualan):
     """Menghapus data penjualan dari database."""
     cursor = conn.cursor()
     try:
-        cursor.execute("DELETE FROM penjualan WHERE id_penjualan = %s", (id_penjualan,))
+        cursor.execute("DELETE FROM penjualan WHERE id_penjualan = %s", 
+                       (
+                           id_penjualan,
+                        ))
         conn.commit()
         print("Data penjualan berhasil dihapus.")
     except psycopg2.Error as e:
         print(f"Error menghapus penjualan: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+
+def create_detail_pembelian(conn, detail_pembelian):
+    """Menambahkan detail pembelian baru ke database."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO detail_pembelian (pembelian_id, varian_id, jumlah, harga) VALUES (%s, %s, %s, %s) RETURNING id_detail_pembelian",
+                (
+                    detail_pembelian.pembelian_id, 
+                    detail_pembelian.varian_id, 
+                    detail_pembelian.jumlah, 
+                    detail_pembelian.harga,
+                    )
+        )
+        detail_pembelian_id = cursor.fetchone()[0]
+        conn.commit()
+        return detail_pembelian_id
+    except psycopg2.Error as e:
+        print(f"Error menambahkan detail pembelian: {e}")
+        conn.rollback()
+        return None
+    finally:
+        cursor.close()
+
+def get_all_detail_pembelian(conn):
+    """Mengambil semua detail pembelian dari database."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM detail_pembelian")
+        rows = cursor.fetchall()
+        detail_pembelian_list = []
+        for row in rows:
+            detail_pembelian = DetailPembelian(row[0], row[1], row[2], row[3], row[4])
+            detail_pembelian_list.append(detail_pembelian)
+        return detail_pembelian_list
+    except psycopg2.Error as e:
+        print(f"Error mengambil data detail pembelian: {e}")
+        return None
+    finally:
+        cursor.close()
+
+def get_detail_pembelian(conn, id_detail_pembelian):
+    """Mengambil detail pembelian berdasarkan id_detail_pembelian."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM detail_pembelian WHERE id_detail_pembelian = %s", 
+                       (
+                           id_detail_pembelian,
+                        ))
+        row = cursor.fetchone()
+        if row:
+            detail_pembelian = DetailPembelian(row[0], row[1], row[2], row[3], row[4])
+            return detail_pembelian
+        else:
+            print("Detail pembelian tidak ditemukan.")
+            return None
+    except psycopg2.Error as e:
+        print(f"Error mengambil data detail pembelian: {e}")
+        return None
+    finally:
+        cursor.close()
+
+def get_detail_pembelian_by_pembelian_id(conn, pembelian_id):
+    """Mengambil semua detail pembelian berdasarkan pembelian_id."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM detail_pembelian WHERE pembelian_id = %s", (pembelian_id,))
+        rows = cursor.fetchall()
+        detail_pembelian_list = []
+        for row in rows:
+            detail_pembelian = DetailPembelian(row[0], row[1], row[2], row[3], row[4])
+            detail_pembelian_list.append(detail_pembelian)
+        return detail_pembelian_list
+    except psycopg2.Error as e:
+        print(f"Error mengambil data detail pembelian: {e}")
+        return None
+    finally:
+        cursor.close()
+
+def update_detail_pembelian(conn, detail_pembelian):
+    """Memperbarui detail pembelian di database."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE detail_pembelian SET pembelian_id = %s, barang_id = %s, jumlah = %s, harga = %s WHERE id_detail_pembelian = %s",
+                (
+                    detail_pembelian.pembelian_id, 
+                    detail_pembelian.barang_id, 
+                    detail_pembelian.jumlah, 
+                    detail_pembelian.harga, 
+                    detail_pembelian.id_detail_pembelian,
+                )
+        )
+        conn.commit()
+        print("Detail pembelian berhasil diperbarui.")
+    except psycopg2.Error as e:
+        print(f"Error memperbarui detail pembelian: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+
+def delete_detail_pembelian(conn, id_detail_pembelian):
+    """Menghapus detail pembelian dari database."""
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM detail_pembelian WHERE id_detail_pembelian = %s", 
+                       (
+                           id_detail_pembelian,
+                        ))
+        conn.commit()
+        print("Detail pembelian berhasil dihapus.")
+    except psycopg2.Error as e:
+        print(f"Error menghapus detail pembelian: {e}")
         conn.rollback()
     finally:
         cursor.close()
