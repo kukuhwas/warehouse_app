@@ -13,13 +13,17 @@ class Barang:
         self.satuan = satuan
 
 class Varian:
-    def __init__(self, id_varian, barang_id, nama_varian, nilai_varian, sku, barang_kode):
+    def __init__(self, id_varian, barang_id, nama_varian, nilai_varian, sku):
         self.id_varian = id_varian
         self.barang_id = barang_id
         self.nama_varian = nama_varian
         self.nilai_varian = nilai_varian
+        # Validasi SKU
+        if sku is None: #
+            raise ValueError("SKU tidak boleh kosong")
+        if len(sku) != 14:
+            raise ValueError("Panjang SKU harus 14 karakter")
         self.sku = sku # Pastikan untuk menambahkan atribut sku
-        self.barang_kode = barang_kode
 
 class Supplier:
     def __init__(self, id_supplier, nama_supplier, kontak, alamat):
@@ -48,11 +52,11 @@ class Pelanggan:
         self.alamat = alamat
 
 class Pembelian:
-    def __init__(self, id_pembelian, tanggal_pembelian, supplier_id, keterangan):
+    def __init__(self, id_pembelian, tanggal_pembelian, supplier_id, keterangan_pembelian):
         self.id_pembelian = id_pembelian
         self.tanggal_pembelian = tanggal_pembelian
         self.supplier_id = supplier_id
-        self.keterangan = keterangan
+        self.keterangan = keterangan_pembelian
 
 class DetailPembelian:
     def __init__(self, id_detail_pembelian, pembelian_id, varian_id, jumlah, harga):
@@ -63,8 +67,8 @@ class DetailPembelian:
         self.harga = harga
 
 class Penjualan:
-    def __init__(self, id_penjualan, tanggal_penjualan, pelanggan_id, keterangan):
+    def __init__(self, id_penjualan, tanggal_penjualan, pelanggan_id, keterangan_penjualan):
         self.id_penjualan = id_penjualan
         self.tanggal_penjualan = tanggal_penjualan
         self.pelanggan_id = pelanggan_id
-        self.keterangan = keterangan
+        self.keterangan = keterangan_penjualan

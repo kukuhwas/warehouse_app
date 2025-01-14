@@ -1,6 +1,7 @@
 import psycopg2
 import configparser
 import uuid
+import re
 from core.models import (
     Kategori, 
     Barang, 
@@ -82,7 +83,7 @@ def create_kategori(conn, kategori):
                         kategori.nama_kategori,
                         ))
         conn.commit()
-        print("Data kategori berhasil ditambahkan.")
+        print(f"Data kategori : '{kategori.id_kategori} - {kategori.nama_kategori}' berhasil ditambahkan.")
         return kategori.id_kategori
     except psycopg2.Error as e:
         print(f"Error menambahkan kategori: {e}")
@@ -176,10 +177,10 @@ def generate_kode_barang(conn, kategori_id):
     cursor = conn.cursor()
     try:
         # Generate UUID versi 4, konversi ke string, ambil 4 karakter pertama, dan uppercase
-        new_uuid = str(uuid.uuid4()).upper()[:4]
+        new_uuid = str(uuid.uuid4())[:4]
         kode_barang = f"{kategori_id}{new_uuid}"
 
-        return kode_barang
+        return kode_barang.upper()
     except psycopg2.Error as e:
         print(f"Error generating kode barang: {e}")
         return None
@@ -206,7 +207,8 @@ def create_barang(conn, barang):
                            barang.deskripsi_barang, 
                            barang.kategori_id, 
                            barang.satuan,
-                        ))
+                        )
+                )
         conn.commit()
         print("Data barang berhasil ditambahkan.")
 
@@ -214,11 +216,7 @@ def create_barang(conn, barang):
         cursor.execute("SELECT currval(pg_get_serial_sequence('barang','id_barang'))")
         barang_id = cursor.fetchone()[0]
 
-        # Mendapatkan kode barang yang baru saja di-insert
-        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", (barang_id,))
-        barang_kode = cursor.fetchone()[0]
-
-        return barang_id, barang_kode
+        return barang_id, barang.kode_barang
     except psycopg2.Error as e:
         print(f"Error menambahkan barang: {e}")
         conn.rollback()
@@ -317,7 +315,7 @@ def delete_barang(conn, id_barang):
             return False
 
         # Hapus varian yang terkait dengan barang
-        cursor.execute("DELETE FROM varian WHERE barang_id = %s", (id_barang,))
+        # cursor.execute("DELETE FROM varian WHERE barang_id = %s", (id_barang,))
 
         # Hapus barang
         cursor.execute("DELETE FROM barang WHERE id_barang = %s", (id_barang,))
@@ -332,19 +330,12 @@ def delete_barang(conn, id_barang):
     finally:
         cursor.close()
 
-def generate_sku(conn, barang_id, nama_varian, nilai_varian):
+
+def generate_sku(conn, kode_barang, nilai_varian):
     cursor = conn.cursor()
     try:
         # 1. Ambil kode barang (2 karakter)
-        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", 
-                       (
-                           barang_id,
-                        ))
-        row = cursor.fetchone()
-        if row is None:
-            print(f"Error: Barang dengan ID {barang_id} tidak ditemukan.")
-            return None
-        kode_barang = row[0][:2]
+        kode_barang = kode_barang.ljust(2, 'X')[:2]  # Padding dengan 'X'
 
         # 2. Buat kode varian (3 karakter) - Sekarang hanya dari nilai_varian
         kode_varian = nilai_varian[0].upper() # Hanya ambil karakter pertama dari nilai varian
@@ -369,42 +360,35 @@ def create_varian(conn, varian):
     """Menambahkan data varian baru ke database."""
     cursor = conn.cursor()
     try:
-        # Validasi nama_varian
-        if varian.nama_varian.upper() != "WARNA":
-            print("Error: Nama varian harus 'Warna'.")
-            return None
+        # Validasi SKU
+        if varian.sku is None:
+            raise Exception("SKU varian tidak boleh kosong.")
 
-        # Generate SKU
-        sku = generate_sku(conn, varian.barang_id, varian.nama_varian, varian.nilai_varian)
-        if sku is None:
-            print("Error: Gagal membuat SKU.")
-            return None
-        varian.sku = sku # Set nilai sku ke objek varian
+        # Validasi format SKU (contoh yang disesuaikan)
+        #if not re.match(r"^[A-Z]{2}-[A-Z0-9]{3}-\d{4}-[0-9A-F]{2}$", varian.sku):
+        if not re.match(r"^[A-Z0-9]{2}-[A-Z0-9]{3}-\d{4}-[0-9A-F]{2}$", varian.sku):
+            raise Exception("Format SKU tidak valid. Format yang diizinkan: PP-VVV-YYMM-UU")
 
-        # Ambil barang_kode berdasarkan barang_id
-        cursor.execute("SELECT kode_barang FROM barang WHERE id_barang = %s", (varian.barang_id,))
-        result = cursor.fetchone()
-        if result is None:
-            print(f"Error: Kode Barang dengan ID {varian.barang_id} tidak ditemukan.")
-            return None
-        varian.barang_kode = result[0]  # Set nilai barang_kode ke objek varian
+        # Cek keunikan SKU
+        cursor.execute("SELECT COUNT(*) FROM varian WHERE sku = %s", (varian.sku,))
+        count = cursor.fetchone()[0]
+        if count > 0:
+            raise Exception(f"SKU {varian.sku} sudah ada.")
 
-        cursor.execute("INSERT INTO varian (barang_id, nama_varian, nilai_varian, sku) VALUES (%s, %s, %s, %s, %s)",
-                       (
-                           varian.barang_id, 
-                           varian.nama_varian, 
-                           varian.nilai_varian, 
-                           varian.sku,
-                           varian.barang_kode,
-                        ))
+        cursor.execute("INSERT INTO varian (barang_id, nama_varian, nilai_varian, sku) VALUES (%s, %s, %s, %s)",
+                       (varian.barang_id, varian.nama_varian, varian.nilai_varian, varian.sku))
         conn.commit()
-        print("Data varian berhasil ditambahkan.")
+        print(f"Data varian berhasil ditambahkan dengan SKU: {varian.sku}")
         # Mendapatkan ID varian yang baru saja di-insert
         cursor.execute("SELECT currval(pg_get_serial_sequence('varian','id_varian'))")
         varian_id = cursor.fetchone()[0]
-        return varian_id
+        return varian_id  # Hanya kembalikan varian_id
     except psycopg2.Error as e:
         print(f"Error menambahkan varian: {e}")
+        conn.rollback()
+        return None
+    except Exception as e:
+        print(f"Error: {e}")
         conn.rollback()
         return None
     finally:
